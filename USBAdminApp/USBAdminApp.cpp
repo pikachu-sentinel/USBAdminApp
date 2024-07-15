@@ -7,15 +7,14 @@
 
 #pragma comment(lib, "setupapi.lib")
 
-std::string WStringToString(const std::wstring& wstr) {
+static std::string WStringToString(const std::wstring& wstr) {
     return std::string(wstr.begin(), wstr.end());
 }
 
-
-HANDLE FindDevice(const std::string& vid, const std::string& pid) {
+static HANDLE FindDevice(const std::string& vid, const std::string& pid) {
     HDEVINFO deviceInfoSet = SetupDiGetClassDevs(&GUID_DEVINTERFACE_USB_DEVICE, NULL, NULL, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
     if (deviceInfoSet == INVALID_HANDLE_VALUE) {
-        std::cerr << "Failed to get device info set" << std::endl;
+        std::cerr << "Failed to get device info set, error: " << GetLastError() << std::endl;
         return INVALID_HANDLE_VALUE;
     }
 
@@ -47,9 +46,17 @@ HANDLE FindDevice(const std::string& vid, const std::string& pid) {
 
                 if (SetupDiGetDeviceInterfaceDetailA(deviceInfoSet, &deviceInterfaceData, deviceInterfaceDetailData, requiredSize, &requiredSize, &deviceInfoData)) {
                     std::string devicePath = deviceInterfaceDetailData->DevicePath;
+                    std::cout << "Device Path: " << devicePath << std::endl;  // Log the device path
+
                     free(deviceInterfaceDetailData);
                     SetupDiDestroyDeviceInfoList(deviceInfoSet);
-                    return CreateFileA(devicePath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+                    HANDLE hDevice = CreateFileA(devicePath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+                    if (hDevice == INVALID_HANDLE_VALUE) {
+                        std::cerr << "Failed to open device, error: " << GetLastError() << std::endl;
+                    }
+
+                    return hDevice;
                 }
 
                 free(deviceInterfaceDetailData);
@@ -71,8 +78,11 @@ void CommunicateWithDevice(HANDLE hDevice) {
     char writeBuffer[] = "Hello, ESP32-C3!";
     DWORD bytesWritten;
     if (!WriteFile(hDevice, writeBuffer, sizeof(writeBuffer), &bytesWritten, NULL)) {
-        std::cerr << "Failed to write to device" << std::endl;
+        std::cerr << "Failed to write to device, error: " << GetLastError() << std::endl;
+        CloseHandle(hDevice);
+        return;
     }
+    std::cout << "Bytes written: " << bytesWritten << std::endl;
 
     char readBuffer[256];
     DWORD bytesRead;
@@ -81,15 +91,15 @@ void CommunicateWithDevice(HANDLE hDevice) {
         std::cout << "Received: " << readBuffer << std::endl;
     }
     else {
-        std::cerr << "Failed to read from device" << std::endl;
+        std::cerr << "Failed to read from device, error: " << GetLastError() << std::endl;
     }
 
     CloseHandle(hDevice);
 }
 
 int main() {
-    std::string vid = "VID_1908"; // Replace with your actual VID - VID_152A
-    std::string pid = "PID_2311"; // Replace with your actual PID - PID_88F2
+    std::string vid = "VID_303A"; // Replace with your actual VID
+    std::string pid = "PID_1001"; // Replace with your actual PID
 
     HANDLE hDevice = FindDevice(vid, pid);
     CommunicateWithDevice(hDevice);
